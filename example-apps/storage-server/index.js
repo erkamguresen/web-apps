@@ -73,15 +73,14 @@ app.post('/login', async function (req, res, next) {
 
   // check credentials
   const credential = credentials.find((credential) => {
-    const [storedUsername, storedPassword] = credential.split(':');
+    const [storedUsername, storedHashPassword] = credential.split(':');
 
     const result =
-      sentUsername === storedUsername && sentPassword === storedPassword;
+      sentUsername === storedUsername &&
+      hashPassword(sentPassword) === storedHashPassword;
 
     return result;
   });
-
-  console.log(credential);
 
   if (!credential) {
     return res.status(401).send('Invalid username or password');
@@ -243,5 +242,6 @@ app.listen(3000, (err) => {
 });
 
 function hashPassword(input) {
-  return crypto.createHash('sha1').update(input).digest('hex');
+  return crypto.createHash('SHA3-256').update(input).digest('hex');
+  // return crypto.createHash('sha1').update(input).digest('hex');
 }
