@@ -62,27 +62,50 @@ app.post('/register', async (req, res) => {
 
 // read username and password from request body
 app.post('/login', async function (req, res, next) {
-  const body = req.body;
+  // { username: <...>, password: <...> }
+  const sentUsername = req.body.username;
+  const sentPassword = req.body.password;
 
   //input validation
-  if (!body.username || !body.password) {
+  if (!sentUsername || !sentPassword) {
     return res.status(401).send('Missing username or password');
   }
 
   // check credentials
-  const user = credentials.find((credential) => {
-    return (
-      credential.username === body.username &&
-      credential.password === body.password
-    );
+  const credential = credentials.find((credential) => {
+    const [storedUsername, storedPassword] = credential.split(':');
+
+    const result =
+      sentUsername === storedUsername && sentPassword === storedPassword;
+
+    return result;
   });
 
-  if (!user) {
+  console.log(credential);
+
+  if (!credential) {
     return res.status(401).send('Invalid username or password');
-  } else {
-    JSON.parse(await asyncReadFile('./data/access-tokens.json', 'utf8'));
-    return next();
   }
+
+  const storedAccessTokens = JSON.parse(
+    await asyncReadFile(accessTokenPath, 'utf8'),
+  );
+
+  if (!storedAccessTokens[sentUsername]) {
+    storedAccessTokens[sentUsername] = {};
+  }
+
+  const randomString = crypto.randomBytes(64).toString('hex');
+
+  storedAccessTokens[sentUsername][randomString] = {
+    createdAt: new Date(),
+  };
+
+  asyncWriteFile(accessTokenPath, JSON.stringify(storedAccessTokens, null, 2));
+
+  res.json({
+    accessToken: randomString,
+  });
 });
 
 // //to use middleware for auth with basic-auth
@@ -108,7 +131,30 @@ app.post('/login', async function (req, res, next) {
 //   }
 // });
 
-//to use middleware for auth
+app.use(async function tokenChecker(req, res, next) {
+  const headerValue = req.header('authorization');
+  const token = headerValue.split(' ')[1];
+
+  const storedAccessTokens = JSON.parse(
+    await asyncReadFile(accessTokenPath, 'utf8'),
+  );
+
+  const userNames = Object.keys(storedAccessTokens);
+
+  const userName = userNames.find((user) => {
+    return storedAccessTokens[user][token];
+  });
+
+  if (!userName) {
+    return res.status(401).send('Invalid token');
+  }
+
+  user = { name: userName };
+
+  next();
+});
+
+//to use middleware for authentication
 app.use('/data/:ownerName', (req, res, next) => {
   if (user.name !== req.params.ownerName) {
     res.status(403).json({
