@@ -4,15 +4,38 @@
 const bodyParser = require('body-parser');
 const express = require('express');
 const morgan = require('morgan');
+const fs = require('fs');
 
 const { readData, writeData, deleteData } = require('./data-access');
 
 // create
 const app = express();
 
+const userDB = `${__dirname}/data/credentials.txt`;
+
+// in the format of ['name:password', 'name:password']
+const credentials = fs.readFileSync(userDB, 'utf-8').split('\n');
+
 // use parsing and logging middleware
 app.use(bodyParser.json());
 app.use(morgan('dev'));
+
+// register new users
+app.post('/register', (req, res) => {
+  const { username, password } = req.body;
+  const user = { username, password };
+
+  // check if user already exists
+  if (credentials.includes(`${username}:${password}`)) {
+    res.status(400).send('User already exists');
+  }
+
+  // add user to credentials
+  credentials.push(`${username}:${password}`);
+});
+// login
+
+// middleware to check if user is logged in based on token
 
 // define routes
 app.get('/data/:ownerName', async (req, res) => {
