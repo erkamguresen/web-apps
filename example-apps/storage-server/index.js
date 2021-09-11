@@ -50,7 +50,7 @@ app.post('/login', (req, res) => {
 
   // check if user exists
   if (!credentials.includes(`${sentUserName}:${sentPassword}`)) {
-    return res.status(401).send('User not found');
+    return res.status(401).send('Username or password incorrect');
   }
 
   // generate access token
