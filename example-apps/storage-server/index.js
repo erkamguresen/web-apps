@@ -24,82 +24,86 @@ app.use(bodyParser.json());
 app.use(morgan('dev'));
 
 // register new users
-app.post('/register', (req, res) => {
-  const { username, password } = req.body;
-  const user = { username, hashedPassword: hashPassword(password) };
+const users = [];
+app.post('/register', async (req, res) => {
+  const username = req.body.username;
+  const password = req.body.password;
 
-  // check if user already exists
-  if (credentials.find((cred) => cred.split(':')[0] === username)) {
-    return res.status(400).send('User already exists');
+  if (!username || !password) {
+    res.status(400).send('Missing username or password');
+    return;
   }
 
-  // add user to credentials
-  credentials.push(`${username}:${password}`);
+  const hashedPassword = hashPassword(password);
 
-  // write credentials to file
-  fs.writeFileSync(userDB, credentials.join('\n'));
+  users.push({ username: username, hash: hashedPassword });
 
-  // send success response
-  res.status(201).send('User created'); // 201 = created
+  res.send(`User ${username} was successfully added to the system`);
 });
 
+const sessions = [];
 // login
 app.post('/login', (req, res) => {
-  const sentUserName = req.body.username;
-  const sentPassword = req.body.password;
+  const username = req.body.username;
+  const password = req.body.password;
 
-  // check if user exists
-  if (!credentials.includes(`${sentUserName}:${sentPassword}`)) {
-    return res.status(401).send('Username or password incorrect');
+  if (!username || !password) {
+    res.status(400).send('Missing username or password');
+    return;
   }
 
-  // generate access token
-  const accessToken = crypto.randomBytes(64).toString('hex');
+  // are the username and password valid?
+  const user = users.find((u) => u.username === username);
+  if (!user) {
+    res.status(401).send('Invalid username or password');
+    return;
+  }
 
-  // add access token to access token file
-  const storedAccessTokens = JSON.parse(
-    fs.readFileSync(accessTokenPath, 'utf-8'),
-  );
+  if (user.hash !== hashPassword(password)) {
+    res.status(401).send('Invalid username or password');
+    return;
+  }
 
-  storedAccessTokens[accessToken] = {
-    sentUserName,
-    createdAt: new Date(),
-    expiresIn: new Date(Date.now() + 1000 * 60 * 60 * 24),
-  };
+  // create a new session for the user
+  // generate a new session id
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.push({ token: token, username: username });
 
-  fs.writeFileSync(accessTokenPath, JSON.stringify(storedAccessTokens));
-
-  console.log(storedAccessTokens);
-
-  // send success token
-  res.status(200).send({ secretToken: accessToken });
+  res.json({
+    message: `Session created for user ${username}`,
+    token: token,
+  });
 });
 
 // middleware to check if user is logged in based on token
-app.use((req, res, next) => {
-  let token = req.headers.authorization;
-
-  if (!token) {
-    return res.status(401).send('Unauthorized');
+app.use('/data/:ownerName', (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    res.status(401).send('You are not logged in!');
+    return;
   }
 
-  token = token.replace('Bearer ', '');
+  const tokenParts = authHeader.split(' ');
 
-  const storedAccessTokens = JSON.parse(
-    fs.readFileSync(accessTokenPath, 'utf-8'),
-  );
-
-  if (!storedAccessTokens[token]) {
-    return res.status(401).send('Unauthorized');
+  if (tokenParts[0].toLowerCase() !== 'bearer' || tokenParts.length !== 2) {
+    res.status(401).send('You are not logged in!');
+    return;
   }
 
-  if (storedAccessTokens[token].expiresIn < new Date()) {
-    delete storedAccessTokens[token];
-    fs.writeFileSync(accessTokenPath, JSON.stringify(storedAccessTokens));
-    return res.status(401).send('Unauthorized');
+  const token = authHeader[1];
+  const theSession = sessions.find((s) => s.token === token);
+
+  if (!theSession) {
+    res.status(401).send('You are not logged in!');
+    return;
   }
 
-  // req.username = storedAccessTokens[token].sentUserName;
+  const owner = req.params.ownerName;
+
+  if (owner !== theSession.username) {
+    res.status(401).send('You can only access your own data!');
+    return;
+  }
 
   next();
 });
